@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coupon Scanner</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #111;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  .wrap { width: 100%; max-width: 420px; }
+  h1 { font-size: 20px; margin-bottom: 20px; text-align: center; }
+  input {
+    width: 100%; padding: 14px; font-size: 16px;
+    border: 1px solid #444; border-radius: 8px;
+    background: #222; color: #fff; margin-bottom: 12px;
+  }
+  button {
+    width: 100%; padding: 16px; font-size: 17px; font-weight: 600;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: #2563eb; color: #fff; margin-top: 8px;
+  }
+  button:active { opacity: 0.8; }
+  button.ghost { background: #333; }
+  .hide { display: none !important; }
+  #reader { width: 100%; border-radius: 10px; overflow: hidden; }
+  .msg { font-size: 14px; margin-top: 10px; text-align: center; color: #f87171; min-height: 20px; }
+  .card { border-radius: 14px; padding: 28px 20px; text-align: center; }
+  .card .big { font-size: 30px; font-weight: 800; margin-bottom: 10px; }
+  .card .code { font-size: 17px; font-family: monospace; word-break: break-all; margin-bottom: 6px; }
+  .card .sub { font-size: 14px; opacity: 0.9; }
+  .green  { background: #15803d; }
+  .orange { background: #c2680a; }
+  .red    { background: #b91c1c; }
+  .status { text-align: center; font-size: 14px; color: #888; margin-top: 14px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .topbar span { font-size: 13px; color: #888; }
+  .topbar a { font-size: 13px; color: #888; cursor: pointer; text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- LOGIN SCREEN -->
+  <div id="loginScreen">
+    <h1>Coupon Scanner</h1>
+    <input type="password" id="pwInput" placeholder="Enter password" autocomplete="off">
+    <button id="loginBtn">Log in</button>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+
+  <!-- SCANNER SCREEN -->
+  <div id="scanScreen" class="hide">
+    <div class="topbar">
+      <span>Point camera at QR code</span>
+      <a id="logoutBtn">Log out</a>
+    </div>
+    <div id="reader"></div>
+    <div class="status" id="scanStatus"></div>
+  </div>
+
+  <!-- RESULT SCREEN -->
+  <div id="resultScreen" class="hide">
+    <div class="card" id="resultCard">
+      <div class="big" id="resultTitle"></div>
+      <div class="code" id="resultCode"></div>
+      <div class="sub" id="resultSub"></div>
+    </div>
+    <button id="nextBtn">Scan next</button>
+    <button id="undoBtn" class="ghost hide">Undo this scan</button>
+    <div class="msg" id="undoMsg"></div>
+  </div>
+
+</div>
+
+<script>
+/* ====== PASTE YOUR WEB APP URL BETWEEN THE QUOTES ====== */
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz5kymmJEHgYtSPWcVXZFCGEob1FvbPzx4aDMvgjW2-6KDCcFiDHT7bck5LTow4J6Q8/exec';
+/* ====================================================== */
+
+var scanner = null;
+var busy = false;
+var lastCode = '';
+
+var loginScreen  = document.getElementById('loginScreen');
+var scanScreen   = document.getElementById('scanScreen');
+var resultScreen = document.getElementById('resultScreen');
+
+function show(el) {
+  loginScreen.classList.add('hide');
+  scanScreen.classList.add('hide');
+  resultScreen.classList.add('hide');
+  el.classList.remove('hide');
+}
+
+function getPass() {
+  return sessionStorage.getItem('couponPass') || '';
+}
+
+function callScript(params) {
+  var qs = Object.keys(params)
+    .map(function (k) { return k + '=' + encodeURIComponent(params[k]); })
+    .join('&');
+  return fetch(SCRIPT_URL + '?' + qs)
+    .then(function (r) { return r.json(); });
+}
+
+/* ---------- LOGIN ---------- */
+document.getElementById('loginBtn').onclick = function () {
+  var pw  = document.getElementById('pwInput').value.trim();
+  var msg = document.getElementById('loginMsg');
+
+  if (!pw) { msg.textContent = 'Please enter the password.'; return; }
+
+  msg.style.color = '#888';
+  msg.textContent = 'Checking...';
+
+  callScript({ action: 'login', pass: pw })
+    .then(function (res) {
+      if (res.status === 'AUTH_OK') {
+        sessionStorage.setItem('couponPass', pw);
+        startScanner();
+      } else {
+        msg.style.color = '#f87171';
+        msg.textContent = 'Wrong password.';
+      }
+    })
+    .catch(function () {
+      msg.style.color = '#f87171';
+      msg.textContent = 'Cannot reach server. Check the URL.';
+    });
+};
+
+document.getElementById('pwInput').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') { document.getElementById('loginBtn').click(); }
+});
+
+document.getElementById('logoutBtn').onclick = function () {
+  sessionStorage.removeItem('couponPass');
+  stopScanner();
+  show(loginScreen);
+};
+
+/* ---------- SCANNER ---------- */
+function startScanner() {
+  show(scanScreen);
+  document.getElementById('scanStatus').textContent = 'Starting camera...';
+
+  if (scanner) {
+    scanner.resume();
+    document.getElementById('scanStatus').textContent = 'Ready';
+    busy = false;
+    return;
+  }
+
+  scanner = new Html5Qrcode('reader');
+  scanner.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: { width: 240, height: 240 } },
+    onScanSuccess,
+    function () {}
+  ).then(function () {
+    document.getElementById('scanStatus').textContent = 'Ready';
+  }).catch(function (err) {
+    document.getElementById('scanStatus').textContent =
+      'Camera error: ' + err + ' — allow camera access and reload.';
+  });
+}
+
+function stopScanner() {
+  if (scanner) {
+    scanner.stop().then(function () { scanner.clear(); scanner = null; });
+  }
+}
+
+function onScanSuccess(decodedText) {
+  if (busy) { return; }
+  busy = true;
+
+  try { scanner.pause(true); } catch (e) {}
+  document.getElementById('scanStatus').textContent = 'Checking code...';
+
+  lastCode = decodedText.trim();
+
+  callScript({ action: 'scan', pass: getPass(), code: lastCode })
+    .then(showResult)
+    .catch(function () {
+      showResult({ status: 'ERROR', message: 'Network problem. Try again.' });
+    });
+}
+
+/* ---------- RESULT ---------- */
+function showResult(res) {
+  var card    = document.getElementById('resultCard');
+  var title   = document.getElementById('resultTitle');
+  var codeEl  = document.getElementById('resultCode');
+  var sub     = document.getElementById('resultSub');
+  var undoBtn = document.getElementById('undoBtn');
+
+  document.getElementById('undoMsg').textContent = '';
+  undoBtn.classList.add('hide');
+  undoBtn.disabled = false;
+  undoBtn.textContent = 'Undo this scan';
+  card.className = 'card';
+
+  if (res.status === 'VALID') {
+    card.classList.add('green');
+    title.textContent  = 'VALID';
+    codeEl.textContent = res.code;
+    sub.textContent    = 'Marked used at ' + res.usedAt;
+    undoBtn.classList.remove('hide');
+
+  } else if (res.status === 'USED') {
+    card.classList.add('orange');
+    title.textContent  = 'ALREADY USED';
+    codeEl.textContent = res.code;
+    sub.textContent    = res.usedAt ? 'Used on ' + res.usedAt : 'This coupon was already redeemed.';
+
+  } else if (res.status === 'INVALID') {
+    card.classList.add('red');
+    title.textContent  = 'INVALID';
+    codeEl.textContent = res.code || '';
+    sub.textContent    = 'This code is not in the system.';
+
+  } else if (res.status === 'AUTH_FAIL') {
+    sessionStorage.removeItem('couponPass');
+    show(loginScreen);
+    document.getElementById('loginMsg').textContent = 'Session expired. Log in again.';
+    busy = false;
+    return;
+
+  } else {
+    card.classList.add('red');
+    title.textContent  = 'ERROR';
+    codeEl.textContent = '';
+    sub.textContent    = res.message || 'Something went wrong.';
+  }
+
+  show(resultScreen);
+}
+
+document.getElementById('nextBtn').onclick = function () {
+  busy = false;
+  startScanner();
+};
+
+document.getElementById('undoBtn').onclick = function () {
+  var btn = document.getElementById('undoBtn');
+  var msg = document.getElementById('undoMsg');
+  btn.disabled = true;
+  btn.textContent = 'Undoing...';
+
+  callScript({ action: 'undo', pass: getPass(), code: lastCode })
+    .then(function (res) {
+      if (res.status === 'UNDONE') {
+        btn.textContent = 'Undone — coupon is valid again';
+        document.getElementById('resultSub').textContent = 'Not used. Undo was applied.';
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'Undo this scan';
+        msg.textContent = res.message || 'Could not undo.';
+      }
+    })
+    .catch(function () {
+      btn.disabled = false;
+      btn.textContent = 'Undo this scan';
+      msg.textContent = 'Network problem.';
+    });
+};
+
+/* ---------- ON PAGE LOAD ---------- */
+if (getPass()) {
+  startScanner();
+} else {
+  show(loginScreen);
+}
+</script>
+</body>
+</html>
