@@ -317,6 +317,7 @@ input.error {
   border-radius: 50%;
   border: 2px solid rgba(99,102,241,.55);
   animation: pulseRing 2.6s ease-out infinite;
+  pointer-events: none;   /* let taps pass through to the button underneath */
 }
 .cam-wrap::after { animation-delay: 1.3s; }
 
@@ -327,6 +328,7 @@ input.error {
 
 .cam-btn {
   position: relative;
+  z-index: 2;              /* sit above the decorative pulse rings */
   width: 120px; height: 120px;
   border: none; border-radius: 50%;
   background: linear-gradient(135deg, var(--brand-1), var(--brand-3));
