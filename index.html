@@ -2,286 +2,1209 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
 <title>Coupon Scanner</title>
+
+<!-- Font -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+<!-- QR scanning library -->
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #111;
-    color: #fff;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 16px;
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+:root {
+  /* Surfaces */
+  --bg-0:        #0b1020;
+  --bg-1:        #141a33;
+  --glass:       rgba(255, 255, 255, 0.06);
+  --glass-brd:   rgba(255, 255, 255, 0.12);
+  --glass-blur:  18px;
+
+  /* Text */
+  --text:        #f3f5fb;
+  --text-dim:    #9aa3c0;
+  --text-faint:  #6b7490;
+
+  /* Brand */
+  --brand-1:     #3b82f6;
+  --brand-2:     #6366f1;
+  --brand-3:     #8b5cf6;
+
+  /* Status */
+  --ok-1:        #16a34a;
+  --ok-2:        #15803d;
+  --warn-1:      #f59e0b;
+  --warn-2:      #d97706;
+  --bad-1:       #ef4444;
+  --bad-2:       #b91c1c;
+
+  /* Shape — 8px grid */
+  --s1: 8px;  --s2: 16px;  --s3: 24px;  --s4: 32px;  --s5: 40px;
+  --r-sm: 12px;  --r-md: 16px;  --r-lg: 20px;  --r-xl: 28px;
+
+  /* Motion */
+  --t-fast: 160ms cubic-bezier(.4,0,.2,1);
+  --t-base: 240ms cubic-bezier(.4,0,.2,1);
+
+  /* Elevation */
+  --shadow-md: 0 8px 24px rgba(0,0,0,.35);
+  --shadow-lg: 0 20px 50px rgba(0,0,0,.45);
+
+  /* Notch-safe padding */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body { height: 100%; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg-0);
+  color: var(--text);
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Dark gradient backdrop */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(1200px 700px at 15% -10%, #1e2a5a 0%, transparent 60%),
+    radial-gradient(900px 600px at 110% 10%, #3b2a6b 0%, transparent 55%),
+    linear-gradient(160deg, #0b1020 0%, #121735 55%, #0d1226 100%);
+  z-index: -2;
+}
+
+/* Soft blurred glowing orbs */
+.orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: .5;
+  pointer-events: none;
+  z-index: -1;
+  will-change: transform;
+}
+.orb.a { width: 320px; height: 320px; background: #4f46e5; top: -90px;  left: -80px;  animation: drift 17s ease-in-out infinite; }
+.orb.b { width: 280px; height: 280px; background: #7c3aed; bottom: -90px; right: -70px; animation: drift 21s ease-in-out infinite reverse; }
+.orb.c { width: 220px; height: 220px; background: #2563eb; top: 45%;     right: -110px; animation: drift 25s ease-in-out infinite; }
+
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(28px, -34px) scale(1.12); }
+}
+
+/* ============================================================
+   LAYOUT
+   ============================================================ */
+.app {
+  position: relative;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding:
+    calc(var(--safe-t) + var(--s2))
+    calc(var(--safe-r) + var(--s2))
+    calc(var(--safe-b) + var(--s2))
+    calc(var(--safe-l) + var(--s2));
+}
+
+.screen { display: none; flex: 1; flex-direction: column; animation: screenIn 320ms cubic-bezier(.22,1,.36,1); }
+.screen.active { display: flex; }
+
+@keyframes screenIn {
+  from { opacity: 0; transform: translateY(14px) scale(.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+.center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.stack  { width: 100%; max-width: 420px; margin: 0 auto; }
+
+/* ============================================================
+   GLASS CARD
+   ============================================================ */
+.card {
+  background: var(--glass);
+  border: 1px solid var(--glass-brd);
+  border-radius: var(--r-xl);
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  box-shadow: var(--shadow-lg);
+  padding: var(--s4) var(--s3);
+}
+
+/* ============================================================
+   LOGIN
+   ============================================================ */
+.brand-mark {
+  width: 68px; height: 68px;
+  margin: 0 auto var(--s3);
+  border-radius: var(--r-lg);
+  display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--brand-1), var(--brand-3));
+  box-shadow: 0 10px 30px rgba(99, 102, 241, .45);
+}
+.brand-mark svg { width: 34px; height: 34px; stroke: #fff; }
+
+.title    { font-size: 25px; font-weight: 800; text-align: center; letter-spacing: -.02em; }
+.subtitle { font-size: 14px; color: var(--text-dim); text-align: center; margin-top: 6px; margin-bottom: var(--s4); }
+
+.field { position: relative; }
+
+.field .lead-icon {
+  position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+  width: 19px; height: 19px; stroke: var(--text-faint); pointer-events: none;
+}
+
+input[type="password"], input[type="text"] {
+  width: 100%;
+  height: 56px;
+  padding: 0 52px 0 46px;
+  font: 500 16px/1 'Inter', sans-serif;  /* 16px stops iOS zoom-on-focus */
+  color: var(--text);
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--glass-brd);
+  border-radius: var(--r-md);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast), background var(--t-fast);
+}
+input::placeholder { color: var(--text-faint); }
+input:focus {
+  outline: none;
+  background: rgba(255,255,255,.08);
+  border-color: var(--brand-1);
+  box-shadow: 0 0 0 4px rgba(59,130,246,.22);
+}
+input.error {
+  border-color: var(--bad-1);
+  box-shadow: 0 0 0 4px rgba(239,68,68,.18);
+  animation: shake 420ms cubic-bezier(.36,.07,.19,.97);
+}
+@keyframes shake {
+  10%, 90% { transform: translateX(-2px); }
+  20%, 80% { transform: translateX(4px); }
+  30%, 50%, 70% { transform: translateX(-7px); }
+  40%, 60% { transform: translateX(7px); }
+}
+
+/* Show / hide password toggle */
+.eye-btn {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 44px; height: 44px;
+  display: grid; place-items: center;
+  background: none; border: none; border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+.eye-btn svg { width: 20px; height: 20px; stroke: var(--text-dim); transition: stroke var(--t-fast); }
+.eye-btn:hover svg { stroke: var(--text); }
+.eye-btn:hover { background: rgba(255,255,255,.07); }
+.eye-btn:focus-visible { outline: 2px solid var(--brand-1); outline-offset: 2px; }
+
+/* ============================================================
+   BUTTONS  (all tap targets >= 48px)
+   ============================================================ */
+.btn {
+  position: relative;
+  width: 100%;
+  min-height: 54px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  font: 600 16px/1 'Inter', sans-serif;
+  color: #fff;
+  border: none; border-radius: var(--r-md);
+  cursor: pointer;
+  transition: transform var(--t-fast), box-shadow var(--t-fast), opacity var(--t-fast), background var(--t-fast);
+}
+.btn svg { width: 19px; height: 19px; stroke: currentColor; }
+.btn:active { transform: scale(.97); }
+.btn:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.btn[disabled] { opacity: .65; cursor: not-allowed; transform: none; }
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
+  box-shadow: 0 10px 26px rgba(79,70,229,.42);
+}
+.btn-primary:hover:not([disabled]) { box-shadow: 0 14px 32px rgba(79,70,229,.55); }
+
+.btn-ghost {
+  background: rgba(255,255,255,.07);
+  border: 1px solid var(--glass-brd);
+  color: var(--text);
+}
+.btn-ghost:hover { background: rgba(255,255,255,.12); }
+
+.btn-outline {
+  background: transparent;
+  border: 1.5px solid rgba(255,255,255,.4);
+  color: #fff;
+}
+.btn-outline:hover { background: rgba(255,255,255,.12); }
+
+/* Inline loading spinner */
+.spinner {
+  width: 19px; height: 19px;
+  border: 2.5px solid rgba(255,255,255,.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Inline error text */
+.form-error {
+  min-height: 22px;
+  margin-top: var(--s2);
+  font-size: 13.5px; font-weight: 500;
+  color: #fca5a5; text-align: center;
+}
+
+/* ============================================================
+   TOP BAR
+   ============================================================ */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; max-width: 420px; margin: 0 auto var(--s2);
+}
+.topbar .app-name { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; }
+.topbar .app-name .dot {
+  width: 30px; height: 30px; border-radius: 9px;
+  display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--brand-1), var(--brand-3));
+}
+.topbar .app-name .dot svg { width: 16px; height: 16px; stroke: #fff; }
+
+.icon-text-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  min-height: 44px; padding: 0 14px;
+  font: 500 13.5px/1 'Inter', sans-serif;
+  color: var(--text-dim);
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--glass-brd);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.icon-text-btn svg { width: 16px; height: 16px; stroke: currentColor; }
+.icon-text-btn:hover { color: var(--text); background: rgba(255,255,255,.1); }
+.icon-text-btn:focus-visible { outline: 2px solid var(--brand-1); outline-offset: 2px; }
+
+/* ============================================================
+   HOME — big camera button
+   ============================================================ */
+.cam-wrap { position: relative; display: grid; place-items: center; margin-bottom: var(--s4); }
+
+/* Pulsing glow rings behind the button */
+.cam-wrap::before,
+.cam-wrap::after {
+  content: '';
+  position: absolute;
+  width: 120px; height: 120px;
+  border-radius: 50%;
+  border: 2px solid rgba(99,102,241,.55);
+  animation: pulseRing 2.6s ease-out infinite;
+}
+.cam-wrap::after { animation-delay: 1.3s; }
+
+@keyframes pulseRing {
+  0%   { transform: scale(1);    opacity: .75; }
+  100% { transform: scale(1.95); opacity: 0; }
+}
+
+.cam-btn {
+  position: relative;
+  width: 120px; height: 120px;
+  border: none; border-radius: 50%;
+  background: linear-gradient(135deg, var(--brand-1), var(--brand-3));
+  box-shadow: 0 18px 48px rgba(99,102,241,.55);
+  display: grid; place-items: center;
+  cursor: pointer;
+  transition: transform var(--t-base), box-shadow var(--t-base);
+}
+.cam-btn svg { width: 46px; height: 46px; stroke: #fff; }
+.cam-btn:hover  { transform: scale(1.05); box-shadow: 0 22px 60px rgba(99,102,241,.7); }
+.cam-btn:active { transform: scale(.95); }
+.cam-btn:focus-visible { outline: 3px solid #fff; outline-offset: 5px; }
+
+.home-label { font-size: 19px; font-weight: 700; text-align: center; }
+.home-hint  { font-size: 13.5px; color: var(--text-faint); text-align: center; margin-top: 8px; }
+
+/* ============================================================
+   SCANNER
+   ============================================================ */
+.scan-shell {
+  position: relative;
+  width: 100%;
+  border-radius: var(--r-xl);
+  overflow: hidden;
+  background: #000;
+  box-shadow: var(--shadow-lg);
+  aspect-ratio: 1 / 1;
+}
+
+#reader { width: 100%; height: 100%; }
+#reader video { width: 100% !important; height: 100% !important; object-fit: cover; display: block; }
+
+/* Hide the library's own chrome — we draw our own overlay */
+#reader__dashboard,
+#reader__header_message,
+#qr-shaded-region { display: none !important; }
+#reader__scan_region { background: transparent !important; }
+#reader img[alt="Info icon"] { display: none !important; }
+
+/* Dimmed overlay with a clear square cut-out */
+.scan-overlay { position: absolute; inset: 0; pointer-events: none; }
+.scan-overlay .dim {
+  position: absolute; inset: 0;
+  background: rgba(5, 8, 20, .55);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  padding: 19%;
+}
+.scan-frame {
+  position: absolute;
+  top: 19%; left: 19%; right: 19%; bottom: 19%;
+  border-radius: var(--r-md);
+}
+
+/* Animated corner brackets */
+.scan-frame span {
+  position: absolute;
+  width: 34px; height: 34px;
+  border: 3.5px solid #fff;
+  animation: cornerPulse 2s ease-in-out infinite;
+}
+.scan-frame span:nth-child(1) { top: -2px;    left: -2px;  border-right: none; border-bottom: none; border-radius: var(--r-md) 0 0 0; }
+.scan-frame span:nth-child(2) { top: -2px;    right: -2px; border-left: none;  border-bottom: none; border-radius: 0 var(--r-md) 0 0; }
+.scan-frame span:nth-child(3) { bottom: -2px; left: -2px;  border-right: none; border-top: none;    border-radius: 0 0 0 var(--r-md); }
+.scan-frame span:nth-child(4) { bottom: -2px; right: -2px; border-left: none;  border-top: none;    border-radius: 0 0 var(--r-md) 0; }
+
+@keyframes cornerPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .45; }
+}
+
+/* Moving horizontal scan line */
+.scan-line {
+  position: absolute; left: 8px; right: 8px; top: 0; height: 2.5px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #60a5fa, #a78bfa, transparent);
+  box-shadow: 0 0 14px rgba(96,165,250,.9);
+  animation: sweep 2.4s ease-in-out infinite;
+}
+@keyframes sweep {
+  0%, 100% { transform: translateY(6px);    opacity: .35; }
+  50%      { transform: translateY(calc(100% - 6px)); opacity: 1; }
+}
+
+.scan-status {
+  margin-top: var(--s3);
+  font-size: 15px; font-weight: 500;
+  color: var(--text-dim); text-align: center;
+  min-height: 22px;
+}
+
+.scan-actions { display: flex; gap: var(--s2); margin-top: var(--s3); }
+.scan-actions .btn { flex: 1; }
+
+/* Torch toggle active state */
+.btn-ghost.torch-on {
+  background: rgba(245, 158, 11, .2);
+  border-color: rgba(245, 158, 11, .55);
+  color: #fcd34d;
+}
+
+/* ============================================================
+   PERMISSION DENIED
+   ============================================================ */
+.perm-icon {
+  width: 78px; height: 78px;
+  margin: 0 auto var(--s3);
+  border-radius: 50%;
+  display: grid; place-items: center;
+  background: rgba(239,68,68,.16);
+  border: 1px solid rgba(239,68,68,.35);
+}
+.perm-icon svg { width: 36px; height: 36px; stroke: #fca5a5; }
+
+/* ============================================================
+   RESULT
+   ============================================================ */
+.result-card {
+  border-radius: var(--r-xl);
+  padding: var(--s5) var(--s3);
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+  animation: resultIn 420ms cubic-bezier(.22,1,.36,1);
+}
+@keyframes resultIn {
+  from { opacity: 0; transform: translateY(26px) scale(.93); }
+  to   { opacity: 1; transform: none; }
+}
+
+.result-card.valid   { background: linear-gradient(145deg, var(--ok-1),   var(--ok-2)); }
+.result-card.used    { background: linear-gradient(145deg, var(--warn-1), var(--warn-2)); }
+.result-card.invalid { background: linear-gradient(145deg, var(--bad-1),  var(--bad-2)); }
+
+.result-icon {
+  width: 92px; height: 92px;
+  margin: 0 auto var(--s3);
+  border-radius: 50%;
+  display: grid; place-items: center;
+  background: rgba(255,255,255,.2);
+  animation: iconPop 520ms cubic-bezier(.34,1.56,.64,1) 120ms both;
+}
+@keyframes iconPop {
+  from { transform: scale(0); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+.result-icon svg { width: 50px; height: 50px; stroke: #fff; stroke-width: 3.5; fill: none; }
+
+/* Draw-on effect for the check / cross / warning strokes */
+.result-icon .draw {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: draw 520ms cubic-bezier(.65,0,.35,1) 380ms forwards;
+}
+.result-icon .draw.d2 { animation-delay: 540ms; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+
+.result-title {
+  font-size: 30px; font-weight: 800;
+  letter-spacing: -.02em; color: #fff;
+  margin-bottom: var(--s2);
+}
+
+/* Coupon code pill, monospace */
+.code-pill {
+  display: inline-block;
+  padding: 10px 20px;
+  font: 700 16px/1 'JetBrains Mono', ui-monospace, monospace;
+  letter-spacing: .06em;
+  color: #fff;
+  background: rgba(0,0,0,.26);
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px;
+  word-break: break-all;
+}
+
+.result-sub {
+  margin-top: var(--s2);
+  font-size: 14px; font-weight: 500;
+  color: rgba(255,255,255,.92);
+}
+
+.result-actions { margin-top: var(--s3); display: flex; flex-direction: column; gap: 12px; }
+
+.undo-msg {
+  min-height: 20px; margin-top: 10px;
+  font-size: 13px; text-align: center; color: #fca5a5;
+}
+
+/* ============================================================
+   ACCESSIBILITY
+   ============================================================ */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+.hide { display: none !important; }
+
+/* Respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
   }
-  .wrap { width: 100%; max-width: 420px; }
-  h1 { font-size: 20px; margin-bottom: 20px; text-align: center; }
-  input {
-    width: 100%; padding: 14px; font-size: 16px;
-    border: 1px solid #444; border-radius: 8px;
-    background: #222; color: #fff; margin-bottom: 12px;
-  }
-  button {
-    width: 100%; padding: 16px; font-size: 17px; font-weight: 600;
-    border: none; border-radius: 8px; cursor: pointer;
-    background: #2563eb; color: #fff; margin-top: 8px;
-  }
-  button:active { opacity: 0.8; }
-  button.ghost { background: #333; }
-  .hide { display: none !important; }
-  #reader { width: 100%; border-radius: 10px; overflow: hidden; }
-  .msg { font-size: 14px; margin-top: 10px; text-align: center; color: #f87171; min-height: 20px; }
-  .card { border-radius: 14px; padding: 28px 20px; text-align: center; }
-  .card .big { font-size: 30px; font-weight: 800; margin-bottom: 10px; }
-  .card .code { font-size: 17px; font-family: monospace; word-break: break-all; margin-bottom: 6px; }
-  .card .sub { font-size: 14px; opacity: 0.9; }
-  .green  { background: #15803d; }
-  .orange { background: #c2680a; }
-  .red    { background: #b91c1c; }
-  .status { text-align: center; font-size: 14px; color: #888; margin-top: 14px; }
-  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-  .topbar span { font-size: 13px; color: #888; }
-  .topbar a { font-size: 13px; color: #888; cursor: pointer; text-decoration: underline; }
+}
+
+/* Small phones */
+@media (max-height: 680px) {
+  .cam-btn { width: 104px; height: 104px; }
+  .cam-wrap::before, .cam-wrap::after { width: 104px; height: 104px; }
+  .card { padding: var(--s3) var(--s2); }
+}
 </style>
 </head>
+
 <body>
-<div class="wrap">
 
-  <!-- LOGIN SCREEN -->
-  <div id="loginScreen">
-    <h1>Coupon Scanner</h1>
-    <input type="password" id="pwInput" placeholder="Enter password" autocomplete="off">
-    <button id="loginBtn">Log in</button>
-    <div class="msg" id="loginMsg"></div>
-  </div>
+<!-- Decorative background orbs -->
+<div class="orb a"></div>
+<div class="orb b"></div>
+<div class="orb c"></div>
 
-  <!-- SCANNER SCREEN -->
-  <div id="scanScreen" class="hide">
-    <div class="topbar">
-      <span>Point camera at QR code</span>
-      <a id="logoutBtn">Log out</a>
+<div class="app">
+
+  <!-- ========================================================
+       SCREEN 1 — LOGIN
+       ======================================================== -->
+  <section class="screen active" id="screenLogin">
+    <div class="center">
+      <div class="stack">
+        <div class="card">
+
+          <div class="brand-mark">
+            <!-- ticket icon -->
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M2 9V7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2a3 3 0 0 0 0 6v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-2a3 3 0 0 0 0-6Z"/>
+              <path d="M13 5v2M13 11v2M13 17v2"/>
+            </svg>
+          </div>
+
+          <h1 class="title">Coupon Scanner</h1>
+          <p class="subtitle">Sign in to start scanning</p>
+
+          <form id="loginForm" novalidate>
+            <div class="field">
+              <!-- lock icon -->
+              <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="11" width="18" height="11" rx="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+
+              <label class="sr-only" for="pwInput">Password</label>
+              <input type="password" id="pwInput" placeholder="Enter password"
+                     autocomplete="current-password" autocapitalize="off" spellcheck="false">
+
+              <button type="button" class="eye-btn" id="eyeBtn" aria-label="Show password">
+                <!-- eye (shown when password is hidden) -->
+                <svg id="eyeOpen" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                <!-- eye-off (shown when password is visible) -->
+                <svg id="eyeOff" class="hide" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M10.6 10.6a3 3 0 0 0 4.2 4.2"/>
+                  <path d="M16.7 16.7A9.9 9.9 0 0 1 12 18c-6.4 0-10-7-10-7a18.6 18.6 0 0 1 5.1-5.9"/>
+                  <path d="M9.9 5.2A9.7 9.7 0 0 1 12 5c6.4 0 10 7 10 7a18.7 18.7 0 0 1-2.3 3.2"/>
+                  <path d="m2 2 20 20"/>
+                </svg>
+              </button>
+            </div>
+
+            <div class="form-error" id="loginError" role="alert" aria-live="polite"></div>
+
+            <button type="submit" class="btn btn-primary" id="loginBtn">
+              <span id="loginBtnLabel">Log in</span>
+            </button>
+          </form>
+
+        </div>
+      </div>
     </div>
-    <div id="reader"></div>
-    <div class="status" id="scanStatus"></div>
-  </div>
+  </section>
 
-  <!-- RESULT SCREEN -->
-  <div id="resultScreen" class="hide">
-    <div class="card" id="resultCard">
-      <div class="big" id="resultTitle"></div>
-      <div class="code" id="resultCode"></div>
-      <div class="sub" id="resultSub"></div>
+  <!-- ========================================================
+       SCREEN 2 — HOME  (camera stays OFF until tapped)
+       ======================================================== -->
+  <section class="screen" id="screenHome">
+    <header class="topbar">
+      <div class="app-name">
+        <span class="dot">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 9V7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2a3 3 0 0 0 0 6v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-2a3 3 0 0 0 0-6Z"/>
+          </svg>
+        </span>
+        Coupon Scanner
+      </div>
+
+      <button class="icon-text-btn" id="logoutBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <path d="m16 17 5-5-5-5M21 12H9"/>
+        </svg>
+        Log out
+      </button>
+    </header>
+
+    <div class="center">
+      <div class="stack" style="text-align:center;">
+        <div class="cam-wrap">
+          <button class="cam-btn" id="camBtn" aria-label="Open camera and scan a coupon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14.5 4h-5L8 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-4l-1.5-2Z"/>
+              <circle cx="12" cy="13" r="3.6"/>
+            </svg>
+          </button>
+        </div>
+
+        <p class="home-label">Tap to scan a coupon</p>
+        <p class="home-hint">Camera access is required</p>
+      </div>
     </div>
-    <button id="nextBtn">Scan next</button>
-    <button id="undoBtn" class="ghost hide">Undo this scan</button>
-    <div class="msg" id="undoMsg"></div>
-  </div>
+  </section>
+
+  <!-- ========================================================
+       SCREEN 3 — SCANNER
+       ======================================================== -->
+  <section class="screen" id="screenScan">
+    <header class="topbar">
+      <div class="app-name">
+        <span class="dot">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 9V7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2a3 3 0 0 0 0 6v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-2a3 3 0 0 0 0-6Z"/>
+          </svg>
+        </span>
+        Scanning
+      </div>
+    </header>
+
+    <div class="center">
+      <div class="stack">
+        <div class="scan-shell">
+          <div id="reader"></div>
+
+          <!-- Our own overlay: dim + frame + brackets + sweep line -->
+          <div class="scan-overlay">
+            <div class="dim"></div>
+            <div class="scan-frame">
+              <span></span><span></span><span></span><span></span>
+              <div class="scan-line"></div>
+            </div>
+          </div>
+        </div>
+
+        <p class="scan-status" id="scanStatus" aria-live="polite">Point camera at QR code</p>
+
+        <div class="scan-actions">
+          <button class="btn btn-ghost hide" id="torchBtn" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 2h12l-1.5 5.5a3 3 0 0 0 .4 2.5l.6.9a3 3 0 0 1 .5 1.7V22H6v-9.4a3 3 0 0 1 .5-1.7l.6-.9a3 3 0 0 0 .4-2.5L6 2Z"/>
+              <path d="M9 15h6"/>
+            </svg>
+            Flash
+          </button>
+
+          <button class="btn btn-ghost" id="cancelScanBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m18 6-12 12M6 6l12 12"/>
+            </svg>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================
+       SCREEN 4 — CAMERA PERMISSION DENIED
+       ======================================================== -->
+  <section class="screen" id="screenPerm">
+    <div class="center">
+      <div class="stack">
+        <div class="card" style="text-align:center;">
+          <div class="perm-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14.5 4h-5L8 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h13"/>
+              <path d="m2 2 20 20"/>
+            </svg>
+          </div>
+
+          <h2 class="title" style="font-size:21px;">Camera blocked</h2>
+          <p class="subtitle" id="permMsg" style="margin-bottom:var(--s3);">
+            Allow camera access in your browser, then try again.
+          </p>
+
+          <button class="btn btn-primary" id="permRetryBtn">Try again</button>
+          <div style="height:12px;"></div>
+          <button class="btn btn-ghost" id="permBackBtn">Back to home</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================
+       SCREEN 5 — RESULT
+       ======================================================== -->
+  <section class="screen" id="screenResult">
+    <div class="center">
+      <div class="stack">
+
+        <div class="result-card" id="resultCard" role="status" aria-live="assertive">
+          <div class="result-icon" id="resultIcon"></div>
+          <h2 class="result-title" id="resultTitle"></h2>
+          <div id="codeWrap"><span class="code-pill" id="resultCode"></span></div>
+          <p class="result-sub" id="resultSub"></p>
+        </div>
+
+        <div class="result-actions">
+          <button class="btn btn-primary" id="nextBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14.5 4h-5L8 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-4l-1.5-2Z"/>
+              <circle cx="12" cy="13" r="3.6"/>
+            </svg>
+            Scan next
+          </button>
+
+          <button class="btn btn-outline hide" id="undoBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 7v6h6"/>
+              <path d="M3.5 13a9 9 0 1 0 2.1-9.4L3 7"/>
+            </svg>
+            <span id="undoLabel">Undo this scan</span>
+          </button>
+
+          <button class="btn btn-ghost" id="homeBtn">Back to home</button>
+        </div>
+
+        <div class="undo-msg" id="undoMsg" aria-live="polite"></div>
+
+      </div>
+    </div>
+  </section>
 
 </div>
 
 <script>
-/* ====== PASTE YOUR WEB APP URL BETWEEN THE QUOTES ====== */
+/* ============================================================
+   1. CONFIG — paste your Apps Script Web app URL here
+   ============================================================ */
 var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz5kymmJEHgYtSPWcVXZFCGEob1FvbPzx4aDMvgjW2-6KDCcFiDHT7bck5LTow4J6Q8/exec';
-/* ====================================================== */
 
-var scanner = null;
-var busy = false;
-var lastCode = '';
+/* ============================================================
+   2. STATE
+   ============================================================ */
+var scanner    = null;    // Html5Qrcode instance
+var busy       = false;   // guards against double-handling one scan
+var lastCode   = '';      // most recent scanned code (for Undo)
+var torchOn    = false;
+var torchReady = false;
+var audioCtx   = null;    // created on first user gesture
 
-var loginScreen  = document.getElementById('loginScreen');
-var scanScreen   = document.getElementById('scanScreen');
-var resultScreen = document.getElementById('resultScreen');
+/* ============================================================
+   3. SMALL HELPERS
+   ============================================================ */
+var $ = function (id) { return document.getElementById(id); };
 
-function show(el) {
-  loginScreen.classList.add('hide');
-  scanScreen.classList.add('hide');
-  resultScreen.classList.add('hide');
-  el.classList.remove('hide');
+/** Show one screen, hide the rest. */
+function showScreen(id) {
+  var all = document.querySelectorAll('.screen');
+  for (var i = 0; i < all.length; i++) { all[i].classList.remove('active'); }
+  $(id).classList.add('active');
 }
 
 function getPass() {
-  return sessionStorage.getItem('couponPass') || '';
+  try { return sessionStorage.getItem('couponPass') || ''; }
+  catch (e) { return ''; }
 }
 
+function setPass(v) {
+  try { v ? sessionStorage.setItem('couponPass', v) : sessionStorage.removeItem('couponPass'); }
+  catch (e) {}
+}
+
+/** Build the query string and call the Apps Script Web app. */
 function callScript(params) {
-  var qs = Object.keys(params)
-    .map(function (k) { return k + '=' + encodeURIComponent(params[k]); })
-    .join('&');
-  return fetch(SCRIPT_URL + '?' + qs)
-    .then(function (r) { return r.json(); });
+  var qs = Object.keys(params).map(function (k) {
+    return k + '=' + encodeURIComponent(params[k]);
+  }).join('&');
+
+  return fetch(SCRIPT_URL + '?' + qs).then(function (r) { return r.json(); });
 }
 
-/* ---------- LOGIN ---------- */
-document.getElementById('loginBtn').onclick = function () {
-  var pw  = document.getElementById('pwInput').value.trim();
-  var msg = document.getElementById('loginMsg');
+/** Short confirmation beep via Web Audio (silently skipped if unsupported). */
+function beep() {
+  try {
+    if (!audioCtx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      audioCtx = new AC();
+    }
+    if (audioCtx.state === 'suspended') { audioCtx.resume(); }
 
-  if (!pw) { msg.textContent = 'Please enter the password.'; return; }
+    var osc  = audioCtx.createOscillator();
+    var gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.22, audioCtx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.16);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.18);
+  } catch (e) {}
+}
 
-  msg.style.color = '#888';
-  msg.textContent = 'Checking...';
+/** Brief haptic tick, where supported. */
+function buzz(pattern) {
+  try { if (navigator.vibrate) { navigator.vibrate(pattern || 60); } } catch (e) {}
+}
 
-  callScript({ action: 'login', pass: pw })
-    .then(function (res) {
-      if (res.status === 'AUTH_OK') {
-        sessionStorage.setItem('couponPass', pw);
-        startScanner();
-      } else {
-        msg.style.color = '#f87171';
-        msg.textContent = 'Wrong password.';
-      }
-    })
-    .catch(function () {
-      msg.style.color = '#f87171';
-      msg.textContent = 'Cannot reach server. Check the URL.';
-    });
-};
+/* ============================================================
+   4. LOGIN
+   ============================================================ */
+var pwInput    = $('pwInput');
+var loginError = $('loginError');
+var loginBtn   = $('loginBtn');
 
-document.getElementById('pwInput').addEventListener('keydown', function (e) {
-  if (e.key === 'Enter') { document.getElementById('loginBtn').click(); }
+/* Show / hide password toggle */
+$('eyeBtn').addEventListener('click', function () {
+  var isHidden = pwInput.type === 'password';
+  pwInput.type = isHidden ? 'text' : 'password';
+  $('eyeOpen').classList.toggle('hide', isHidden);
+  $('eyeOff').classList.toggle('hide', !isHidden);
+  this.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+  pwInput.focus();
 });
 
-document.getElementById('logoutBtn').onclick = function () {
-  sessionStorage.removeItem('couponPass');
-  stopScanner();
-  show(loginScreen);
-};
+/* Clear the error styling as soon as the user edits the field */
+pwInput.addEventListener('input', function () {
+  pwInput.classList.remove('error');
+  loginError.textContent = '';
+});
 
-/* ---------- SCANNER ---------- */
-function startScanner() {
-  show(scanScreen);
-  document.getElementById('scanStatus').textContent = 'Starting camera...';
+function setLoginLoading(on) {
+  loginBtn.disabled = on;
+  $('loginBtnLabel').textContent = on ? 'Checking' : 'Log in';
 
-  if (scanner) {
-    scanner.resume();
-    document.getElementById('scanStatus').textContent = 'Ready';
-    busy = false;
+  var existing = loginBtn.querySelector('.spinner');
+  if (on && !existing) {
+    var sp = document.createElement('span');
+    sp.className = 'spinner';
+    loginBtn.appendChild(sp);
+  } else if (!on && existing) {
+    existing.remove();
+  }
+}
+
+/* Form submit also covers pressing Enter in the input */
+$('loginForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+
+  var pw = pwInput.value.trim();
+  if (!pw) {
+    pwInput.classList.add('error');
+    loginError.textContent = 'Please enter the password.';
     return;
   }
 
-  scanner = new Html5Qrcode('reader');
+  setLoginLoading(true);
+  loginError.textContent = '';
+
+  callScript({ action: 'login', pass: pw })
+    .then(function (res) {
+      setLoginLoading(false);
+
+      if (res.status === 'AUTH_OK') {
+        setPass(pw);
+        pwInput.value = '';
+        showScreen('screenHome');          // Home — camera stays OFF
+      } else {
+        pwInput.classList.add('error');
+        loginError.textContent = 'Wrong password. Please try again.';
+        buzz([40, 50, 40]);
+      }
+    })
+    .catch(function () {
+      setLoginLoading(false);
+      pwInput.classList.add('error');
+      loginError.textContent = 'Cannot reach the server. Check your connection.';
+    });
+});
+
+/* ============================================================
+   5. LOG OUT
+   ============================================================ */
+$('logoutBtn').addEventListener('click', function () {
+  setPass('');
+  stopScanner().then(function () { showScreen('screenLogin'); });
+});
+
+/* ============================================================
+   6. SCANNER — start / stop
+   ============================================================ */
+$('camBtn').addEventListener('click', function () {
+  beep();                 // also unlocks the audio context on first gesture
+  try { if (audioCtx) { audioCtx.resume(); } } catch (e) {}
+  openScanner();
+});
+
+$('permRetryBtn').addEventListener('click', openScanner);
+$('permBackBtn').addEventListener('click', function () { showScreen('screenHome'); });
+
+$('cancelScanBtn').addEventListener('click', function () {
+  stopScanner().then(function () { showScreen('screenHome'); });
+});
+
+function openScanner() {
+  showScreen('screenScan');
+  $('scanStatus').textContent = 'Starting camera…';
+  busy = false;
+  torchOn = false;
+  torchReady = false;
+  $('torchBtn').classList.add('hide');
+  $('torchBtn').classList.remove('torch-on');
+  $('torchBtn').setAttribute('aria-pressed', 'false');
+
+  if (!scanner) { scanner = new Html5Qrcode('reader', { verbose: false }); }
+
+  // qrbox roughly matches the visual frame (62% of the square preview)
+  var side = Math.round(Math.min(window.innerWidth - 32, 420) * 0.62);
+
   scanner.start(
-    { facingMode: 'environment' },
-    { fps: 10, qrbox: { width: 240, height: 240 } },
+    { facingMode: 'environment' },                       // back camera
+    { fps: 10, qrbox: { width: side, height: side } },
     onScanSuccess,
-    function () {}
-  ).then(function () {
-    document.getElementById('scanStatus').textContent = 'Ready';
-  }).catch(function (err) {
-    document.getElementById('scanStatus').textContent =
-      'Camera error: ' + err + ' — allow camera access and reload.';
+    function () { /* per-frame decode misses — ignore */ }
+  )
+  .then(function () {
+    $('scanStatus').textContent = 'Point camera at QR code';
+    setupTorch();
+  })
+  .catch(function (err) {
+    handleCameraError(err);
   });
 }
 
+/** Stop the camera and release every track. Always resolves. */
 function stopScanner() {
-  if (scanner) {
-    scanner.stop().then(function () { scanner.clear(); scanner = null; });
-  }
+  return new Promise(function (resolve) {
+    if (!scanner) { return resolve(); }
+
+    var state = typeof scanner.getState === 'function' ? scanner.getState() : null;
+    // 2 === SCANNING, 3 === PAUSED
+    if (state !== 2 && state !== 3) { return resolve(); }
+
+    scanner.stop()
+      .then(function () { try { scanner.clear(); } catch (e) {} resolve(); })
+      .catch(function () { resolve(); });
+  });
 }
 
+/* ---------- Torch / flash (only when the device supports it) ---------- */
+function setupTorch() {
+  try {
+    var caps = scanner.getRunningTrackCapabilities();
+    if (caps && caps.torch) {
+      torchReady = true;
+      $('torchBtn').classList.remove('hide');
+    }
+  } catch (e) { /* capability lookup unsupported — leave the button hidden */ }
+}
+
+$('torchBtn').addEventListener('click', function () {
+  if (!torchReady || !scanner) { return; }
+  var next = !torchOn;
+
+  scanner.applyVideoConstraints({ advanced: [{ torch: next }] })
+    .then(function () {
+      torchOn = next;
+      toggleTorchUI(next);
+    })
+    .catch(function () {
+      $('scanStatus').textContent = 'Flash is not available on this camera.';
+    });
+});
+
+function toggleTorchUI(on) {
+  var b = $('torchBtn');
+  b.classList.toggle('torch-on', on);
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+/* ---------- Camera errors ---------- */
+function handleCameraError(err) {
+  var text = (err && (err.name || err.message || err)) + '';
+  var msg;
+
+  if (/NotAllowed|Permission|denied/i.test(text)) {
+    msg = 'Camera permission was denied. Tap the padlock in your browser bar, allow Camera, then try again.';
+  } else if (/NotFound|Overconstrained/i.test(text)) {
+    msg = 'No usable camera was found on this device.';
+  } else if (/NotReadable|TrackStart/i.test(text)) {
+    msg = 'The camera is being used by another app. Close it and try again.';
+  } else if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+    msg = 'The camera only works over a secure (https) connection.';
+  } else {
+    msg = 'Could not start the camera. ' + text;
+  }
+
+  $('permMsg').textContent = msg;
+  showScreen('screenPerm');
+}
+
+/* ============================================================
+   7. SCAN SUCCESS → ask the backend
+   ============================================================ */
 function onScanSuccess(decodedText) {
   if (busy) { return; }
   busy = true;
 
-  try { scanner.pause(true); } catch (e) {}
-  document.getElementById('scanStatus').textContent = 'Checking code...';
+  buzz(60);
+  beep();
 
-  lastCode = decodedText.trim();
+  // Pause the live feed so it stops decoding while we check the code
+  try { scanner.pause(true); } catch (e) {}
+  $('scanStatus').textContent = 'Scanning…';
+
+  lastCode = (decodedText || '').trim();
 
   callScript({ action: 'scan', pass: getPass(), code: lastCode })
     .then(showResult)
     .catch(function () {
-      showResult({ status: 'ERROR', message: 'Network problem. Try again.' });
+      showResult({ status: 'ERROR', message: 'Network problem. Please try again.' });
     });
 }
 
-/* ---------- RESULT ---------- */
-function showResult(res) {
-  var card    = document.getElementById('resultCard');
-  var title   = document.getElementById('resultTitle');
-  var codeEl  = document.getElementById('resultCode');
-  var sub     = document.getElementById('resultSub');
-  var undoBtn = document.getElementById('undoBtn');
+/* ============================================================
+   8. RESULT SCREEN
+   ============================================================ */
+/* Inline SVG icons for each outcome. `.draw` paths animate in. */
+var ICONS = {
+  check: '<svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="22" stroke="rgba(255,255,255,.55)" stroke-width="3"/><path class="draw" d="M15 27l8 8 15-16" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  warn:  '<svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="22" stroke="rgba(255,255,255,.55)" stroke-width="3"/><path class="draw" d="M26 15v15" stroke-linecap="round"/><path class="draw d2" d="M26 37.5v.2" stroke-linecap="round"/></svg>',
+  cross: '<svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="22" stroke="rgba(255,255,255,.55)" stroke-width="3"/><path class="draw" d="M17 17l18 18" stroke-linecap="round"/><path class="draw d2" d="M35 17L17 35" stroke-linecap="round"/></svg>'
+};
 
-  document.getElementById('undoMsg').textContent = '';
+function showResult(res) {
+  var card    = $('resultCard');
+  var icon    = $('resultIcon');
+  var title   = $('resultTitle');
+  var code    = $('resultCode');
+  var sub     = $('resultSub');
+  var undoBtn = $('undoBtn');
+
+  // Reset everything from the previous result
+  $('undoMsg').textContent = '';
   undoBtn.classList.add('hide');
   undoBtn.disabled = false;
-  undoBtn.textContent = 'Undo this scan';
-  card.className = 'card';
+  $('undoLabel').textContent = 'Undo this scan';
+  card.className = 'result-card';
+  $('codeWrap').classList.remove('hide');
 
   if (res.status === 'VALID') {
-    card.classList.add('green');
-    title.textContent  = 'VALID';
-    codeEl.textContent = res.code;
-    sub.textContent    = 'Marked used at ' + res.usedAt;
-    undoBtn.classList.remove('hide');
+    card.classList.add('valid');
+    icon.innerHTML   = ICONS.check;
+    title.textContent = 'VALID';
+    code.textContent  = res.code || lastCode;
+    sub.textContent   = 'Marked used at ' + (res.usedAt || '');
+    undoBtn.classList.remove('hide');       // Undo only for a fresh redemption
+    buzz([40, 60, 40]);
 
   } else if (res.status === 'USED') {
-    card.classList.add('orange');
-    title.textContent  = 'ALREADY USED';
-    codeEl.textContent = res.code;
-    sub.textContent    = res.usedAt ? 'Used on ' + res.usedAt : 'This coupon was already redeemed.';
+    card.classList.add('used');
+    icon.innerHTML    = ICONS.warn;
+    title.textContent = 'ALREADY USED';
+    code.textContent  = res.code || lastCode;
+    sub.textContent   = res.usedAt ? 'Used on ' + res.usedAt : 'This coupon was already redeemed.';
+    buzz([120, 70, 120]);
 
   } else if (res.status === 'INVALID') {
-    card.classList.add('red');
-    title.textContent  = 'INVALID';
-    codeEl.textContent = res.code || '';
-    sub.textContent    = 'This code is not in the system.';
+    card.classList.add('invalid');
+    icon.innerHTML    = ICONS.cross;
+    title.textContent = 'INVALID';
+    code.textContent  = res.code || lastCode;
+    sub.textContent   = 'This code is not in the system.';
+    buzz([200]);
 
   } else if (res.status === 'AUTH_FAIL') {
-    sessionStorage.removeItem('couponPass');
-    show(loginScreen);
-    document.getElementById('loginMsg').textContent = 'Session expired. Log in again.';
+    // Password changed server-side while the tab was open
+    setPass('');
+    stopScanner().then(function () {
+      showScreen('screenLogin');
+      loginError.textContent = 'Session expired. Please log in again.';
+    });
     busy = false;
     return;
 
   } else {
-    card.classList.add('red');
-    title.textContent  = 'ERROR';
-    codeEl.textContent = '';
-    sub.textContent    = res.message || 'Something went wrong.';
+    card.classList.add('invalid');
+    icon.innerHTML    = ICONS.cross;
+    title.textContent = 'ERROR';
+    $('codeWrap').classList.add('hide');
+    sub.textContent   = res.message || 'Something went wrong. Please try again.';
   }
 
-  show(resultScreen);
+  showScreen('screenResult');
 }
 
-document.getElementById('nextBtn').onclick = function () {
+/* ---------- Result screen buttons ---------- */
+$('nextBtn').addEventListener('click', function () {
   busy = false;
-  startScanner();
-};
 
-document.getElementById('undoBtn').onclick = function () {
-  var btn = document.getElementById('undoBtn');
-  var msg = document.getElementById('undoMsg');
+  // Resume the paused feed if it is still alive, otherwise start fresh
+  var state = scanner && typeof scanner.getState === 'function' ? scanner.getState() : null;
+  if (state === 3) {                       // 3 === PAUSED
+    try {
+      scanner.resume();
+      showScreen('screenScan');
+      $('scanStatus').textContent = 'Point camera at QR code';
+      return;
+    } catch (e) { /* fall through to a full restart */ }
+  }
+  openScanner();
+});
+
+$('homeBtn').addEventListener('click', function () {
+  busy = false;
+  stopScanner().then(function () { showScreen('screenHome'); });
+});
+
+$('undoBtn').addEventListener('click', function () {
+  var btn   = $('undoBtn');
+  var label = $('undoLabel');
+  var msg   = $('undoMsg');
+
   btn.disabled = true;
-  btn.textContent = 'Undoing...';
+  label.textContent = 'Undoing…';
 
   callScript({ action: 'undo', pass: getPass(), code: lastCode })
     .then(function (res) {
       if (res.status === 'UNDONE') {
-        btn.textContent = 'Undone — coupon is valid again';
-        document.getElementById('resultSub').textContent = 'Not used. Undo was applied.';
+        label.textContent = 'Undone — coupon is valid again';
+        $('resultSub').textContent = 'Not used. The undo was applied.';
+        buzz(40);
       } else {
         btn.disabled = false;
-        btn.textContent = 'Undo this scan';
-        msg.textContent = res.message || 'Could not undo.';
+        label.textContent = 'Undo this scan';
+        msg.textContent = res.message || 'Could not undo this scan.';
       }
     })
     .catch(function () {
       btn.disabled = false;
-      btn.textContent = 'Undo this scan';
-      msg.textContent = 'Network problem.';
+      label.textContent = 'Undo this scan';
+      msg.textContent = 'Network problem. Please try again.';
     });
-};
+});
 
-/* ---------- ON PAGE LOAD ---------- */
+/* ============================================================
+   9. HOUSEKEEPING
+   ============================================================ */
+/* Free the camera if the tab is hidden or closed */
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden && $('screenScan').classList.contains('active')) {
+    stopScanner().then(function () { showScreen('screenHome'); });
+  }
+});
+window.addEventListener('pagehide', function () { stopScanner(); });
+
+/* ============================================================
+   10. BOOT — a remembered session lands on Home, not the camera
+   ============================================================ */
 if (getPass()) {
-  startScanner();
+  showScreen('screenHome');
 } else {
-  show(loginScreen);
+  showScreen('screenLogin');
+  pwInput.focus();
 }
 </script>
 </body>
